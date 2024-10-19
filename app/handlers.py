@@ -1,13 +1,14 @@
-from aiogram import F, Router,Bot
-from aiogram.filters import CommandStart,Command
-from aiogram.types import Message, CallbackQuery
+from aiogram import Bot, F, Router
+from aiogram.filters import CommandStart, Command
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
 
-from aiogram.types import (ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton)
+from typing import List
 
 import app.keyboards as kb
+from app.keyboards import create_date_keyboard, create_time_keyboard
 
 router = Router()
 
@@ -32,7 +33,7 @@ async def cmd_start(message: Message):
     await message.answer("Добро пожаловать", reply_markup=kb.main)
 
 @router.message(Command("clear"))
-async def clear_bot(message: Message, bot: Bot)-> None:
+async def clear_bot(message: Message, bot: Bot) -> None:
     try:
         for i in range(message.message_id, 0, -1):
             await bot.delete_message(message.from_user.id, i)
@@ -47,114 +48,118 @@ async def contants(message: Message):
 @router.message(F.text == 'Запись на установку')
 async def zap_yst(message: Message, state: FSMContext):
     await state.set_state(Register.size)
-    await message.answer('Введите размер своей комнаты куда будет установлен кондиционер')
+    await message.answer('Введите квадратуру комнаты в которой будет установлен кондиционер')
 
 @router.message(Register.size)
 async def reg_size(message: Message, state: FSMContext):
     await state.update_data(size=message.text)
     await state.set_state(Register.photo)
-    await message.answer('Скиньте фотографии комнату изнутри и снаружи')
+    await message.answer('Скиньте фотографию комнаты изнутри')
 
-@router.message(Register.photo)
-async def reg_photo(message: Message, state: FSMContext):
-    # Проверяем, есть ли фото в сообщении
-    if not message.photo:
-        await message.answer('Пожалуйста, отправьте фотографию.')
-        return
-
-    # Если фото есть, получаем его
-    photo_id = message.photo[-1].file_id
-    await state.update_data(photo=photo_id)
-    await state.set_state(Register.adress)
-    await message.answer('Введите ваш адрес')
+@router.message(Register.photo, F.photo) 
+async def reg_photo(message: Message, state: FSMContext): 
+ 
+    user_data = await state.get_data() 
+    photos: List = user_data.get("photo", [])    
+ 
+    photos.append(message.photo[-1].file_id) 
+    await state.update_data(photo=photos) 
+     
+    if len(photos) < 2: 
+        await message.answer("Отправьте фотографию комнаты снаружи") 
+          
+    if len(photos) == 2: 
+        print('цикл') 
+        await state.set_state(Register.adress) 
+        await message.answer('Введите ваш адресс')
 
 @router.message(Register.adress)
-async def reg_adress (message: Message, state: FSMContext):
+async def reg_adress(message: Message, state: FSMContext):
     await state.update_data(adress=message.text)
     await state.set_state(Register.day)
-    await message.answer('Выбери день удобный вам для установки')
+    await message.answer('Выбери день удобный вам для установки', reply_markup=await create_date_keyboard())
 
-@router.message(Register.day)
-async def reg_day (message: Message, state: FSMContext):
-    await state.update_data(day=message.text)
+@router.callback_query(F.data.startswith('day_'))
+async def process_date_selection(callback_query: CallbackQuery, state: FSMContext):
+    selected_date = callback_query.data[4:] 
+    await state.update_data(day=selected_date)
+    await callback_query.message.answer(f'Вы выбрали дату: {selected_date}. Теперь выберите удобное время для установки.', reply_markup=await create_time_keyboard())
     await state.set_state(Register.time)
-    await message.answer('Выберите время удобное для установки')
 
-@router.message(Register.time)
-async def reg_time (message: Message, state: FSMContext):
-    await state.update_data(time=message.text)
+@router.callback_query(F.data.startswith('time_'))
+async def time_call(callback_query: CallbackQuery, state: FSMContext):
+    selected_time = callback_query.data[5:]
+    await state.update_data(time=selected_time)
+    await callback_query.message.answer(f'Вы выбрали время: с {selected_time} часов. Пожалуйста, отправьте ваш контакт для завершения записи.', reply_markup=kb.get_number)
+    
     await state.set_state(Register.phone)
-    await message.answer('Введите имя и номер телефона', reply_markup=kb.get_number)
 
 @router.message(Register.phone, F.contact)
 async def reg_phone(message: Message, state: FSMContext):
-    await state.update_data(phone = message.contact.phone_number, name=message.contact.first_name)
+    await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
     data = await state.get_data()
-    await message.answer_photo(photo=data['photo'],
+    await message.answer_photo(photo=data['photo'][0],
         caption=(
             'Спасибо за обращение, запись успешно создана\n'
-            f'Размер комнаты: {data["size"]}\n'
+            f'Ваш размер комнаты: {data["size"]}\n'
             f'Имя: {data["name"]}\n'
             f'Адрес: {data["adress"]}\n'
             f'Номер телефона: {data["phone"]}\n'
-            f'Дата установки: {data["day"]} {data["time"]}\n'
+            f'День установки: {data["day"]}\n'
+            f'Время для установки: с {data["time"]} часов'
         ), reply_markup=kb.main)
     await state.clear()
 
-@router.message(F.text == 'Запись на обслуживание')
-async def zap_yst(message: Message, state: FSMContext):
-    await state.set_state(Servis.size)
-    await message.answer('Введите размер своей комнаты куда будет установлен кондиционер')
-
 @router.message(Servis.size)
-async def reg_size(message: Message, state: FSMContext):
+async def reg_size_servis(message: Message, state: FSMContext):
     await state.update_data(size=message.text)
     await state.set_state(Servis.photo)
-    await message.answer('Скиньте пожалуйста фотографию , где установлен внутренний и наружный блок кондиционера.')
+    await message.answer('Скиньте пожалуйста фотографию, где установлен внутренний и наружный блок кондиционера.')
 
 @router.message(Servis.photo)
-async def reg_photo(message: Message, state: FSMContext):
-    # Проверяем, есть ли фото в сообщении
+async def reg_photo_servis(message: Message, state: FSMContext):
     if not message.photo:
         await message.answer('Пожалуйста, отправьте фотографию.')
         return
 
-    # Если фото есть, получаем его
     photo_id = message.photo[-1].file_id
     await state.update_data(photo=photo_id)
     await state.set_state(Servis.adress)
     await message.answer('Введите ваш адрес')
 
-
 @router.message(Servis.adress)
-async def reg_adress (message: Message, state: FSMContext):
+async def reg_adress(message: Message, state: FSMContext):
     await state.update_data(adress=message.text)
     await state.set_state(Servis.day)
-    await message.answer('Выбери день удобный вам для установки')
+    await message.answer('Выбери день удобный вам для установки', reply_markup=await create_date_keyboard())
 
-@router.message(Servis.day)
-async def reg_day (message: Message, state: FSMContext):
-    await state.update_data(day=message.text)
+@router.callback_query(F.data.startswith('day_'))
+async def process_date_selection(callback_query: CallbackQuery, state: FSMContext):
+    selected_date = callback_query.data[4:] 
+    await state.update_data(day=selected_date)
+    await callback_query.message.answer(f'Вы выбрали дату: {selected_date}. Теперь выберите удобное время для установки.', reply_markup=await create_time_keyboard())
     await state.set_state(Servis.time)
-    await message.answer('Выберите время удобное для установки')
 
-@router.message(Servis.time)
-async def reg_time (message: Message, state: FSMContext):
-    await state.update_data(time=message.text)
+@router.callback_query(F.data.startswith('time_'))
+async def time_call(callback_query: CallbackQuery, state: FSMContext):
+    selected_time = callback_query.data[5:]
+    await state.update_data(time=selected_time)
+    await callback_query.message.answer(f'Вы выбрали время: с {selected_time} часов. Пожалуйста, отправьте ваш контакт для завершения записи.', reply_markup=kb.get_number)
+    
     await state.set_state(Servis.phone)
-    await message.answer('Введите имя и номер телефона', reply_markup=kb.get_number)
 
 @router.message(Servis.phone, F.contact)
 async def reg_phone(message: Message, state: FSMContext):
-    await state.update_data(phone = message.contact.phone_number, name=message.contact.first_name)
+    await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
     data = await state.get_data()
     await message.answer_photo(photo=data['photo'],
         caption=(
             'Спасибо за обращение, запись успешно создана\n'
-            f'Размер комнаты: {data["size"]}\n'
+            f'Ваш размер комнаты: {data["size"]}\n'
             f'Имя: {data["name"]}\n'
             f'Адрес: {data["adress"]}\n'
             f'Номер телефона: {data["phone"]}\n'
-            f'Дата установки: {data["day"]} {data["time"]}\n'
+            f'День установки: {data["day"]}\n'
+            f'Время для установки: с {data["time"]} часов'
         ), reply_markup=kb.main)
     await state.clear()

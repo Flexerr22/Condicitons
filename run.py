@@ -13,7 +13,7 @@ async def set_default_commands(bot: Bot):
     ])
 
 async def main():
-    bot = Bot(token='7886496198:AAHmgHS7O37qUGJ5TiXJID6yKM1lMnBkodg')
+    bot = Bot(token='7641008131:AAHY5nGar9rIG0xEBr7duB1bElV1AgaV1Ns')
     dp = Dispatcher()
     dp.include_router(router)
     await set_default_commands(bot)
