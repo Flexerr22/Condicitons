@@ -44,3 +44,25 @@ async def create_date_keyboard():
         keyboard.inline_keyboard.append([button])  
     
     return keyboard
+
+
+async def change_data_keyboard():
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(text='Размер комнаты', callback_data='change_size'))
+    keyboard.add(InlineKeyboardButton(text='Фото', callback_data='change_photo'))
+    keyboard.add(InlineKeyboardButton(text='Адрес', callback_data='change_address'))
+    keyboard.add(InlineKeyboardButton(text='Дата', callback_data='change_date'))
+    keyboard.add(InlineKeyboardButton(text='Время', callback_data='change_time'))
+    return keyboard.as_markup()
+
+async def confirm_changes_keyboard():
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(text='Изменить другие данные', callback_data='main_change_data'))
+    keyboard.add(InlineKeyboardButton(text='Сохранить данные', callback_data='save_data'))
+    return keyboard.as_markup()
+
+confirm_or_change = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text='Сохранить данные', callback_data='save_data'), InlineKeyboardButton(text='Изменить данные', callback_data='main_change_data')]
+    ]
+)
