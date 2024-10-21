@@ -16,6 +16,7 @@ class Register(StatesGroup):
     size = State()
     photo = State()
     adress = State()
+    name = State()
     phone = State()
     day = State()
     time = State()
@@ -23,6 +24,7 @@ class Register(StatesGroup):
     change_data = State()
 
 class Changes(StatesGroup):
+    name = State()
     size = State()
     photo = State()
     adress = State()
@@ -31,6 +33,7 @@ class Changes(StatesGroup):
     time = State()
 
 class Servis(StatesGroup):
+    name = State()
     size = State()
     photo = State()
     adress = State()
@@ -105,9 +108,27 @@ async def time_call(callback_query: CallbackQuery, state: FSMContext):
     
     await state.set_state(Register.phone)
 
+@router.message(F.text == 'Ввести данные вручную')
+async def reg_pn(message: Message, state: FSMContext):
+    await state.set_state(Register.name)
+    await message.answer('Введите ваше имя')
+
+# Хендлер для ввода имени вручную
+@router.message(Register.name)
+async def reg_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await message.answer('Введите ваш номер телефона')
+    await state.set_state(Register.phone)
+
 @router.message(Register.phone, F.contact)
+@router.message(Register.phone)
 async def reg_phone(message: Message, state: FSMContext):
-    await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
+    if message.contact:
+        await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
+    else:
+        await state.update_data(phone=message.text)
+    
+    # Вывод итоговых данных
     data = await state.get_data()
     await message.answer(
         f'Ваш размер комнаты: {data["size"]}\n'
@@ -116,8 +137,8 @@ async def reg_phone(message: Message, state: FSMContext):
         f'Номер телефона: {data["phone"]}\n'
         f'День установки: {data["day"]}\n'
         f'Время для установки: с {data["time"]} часов\n'
-        'Проверьте данные и выберите действие'
-        ,reply_markup=kb.confirm_or_change
+        'Проверьте данные и выберите действие',
+        reply_markup=kb.confirm_or_change
     )
     await state.set_state(Register.confirm_data)
 
@@ -125,7 +146,7 @@ async def reg_phone(message: Message, state: FSMContext):
 async def save_data_callback(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     await callback.message.answer_photo(
-        photo=data['photo'][0],  # Отправляем первую фотографию
+        photo=data['photo'][0],
         caption=(
             'Спасибо за обращение, запись успешно создана\n'
             f'Ваш размер комнаты: {data["size"]}\n'
@@ -141,7 +162,7 @@ async def save_data_callback(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == 'main_change_data')
 async def change_data(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer('Выберите данные для изменения', reply_markup=await change_data_keyboard())
+    await callback.message.answer('Выберите данные для изменения', reply_markup=change_data_keyboard)
 
 
 
@@ -158,6 +179,12 @@ async def change_data_callback(callback: CallbackQuery, state: FSMContext):
     elif field_to_change == 'address':
         await state.set_state(Changes.adress)
         await callback.message.answer('Введите новый адрес:')
+    elif field_to_change == 'name':
+        await state.set_state(Changes.name)
+        await callback.message.answer('Введите новое имя:')
+    elif field_to_change == 'phone':
+        await state.set_state(Changes.phone)
+        await callback.message.answer('Введите новый номер телефона:')
     elif field_to_change == 'date':
         await state.set_state(Changes.day)
         await callback.message.answer('Выберите новую дату:', reply_markup=await create_date_keyboard())
@@ -178,6 +205,18 @@ async def handle_new_adress(message: Message, state: FSMContext):
 async def handle_new_size(message: Message, state: FSMContext):
     await state.update_data(size=message.text)
     await message.answer('Размер комнаты изменен. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
+    await state.set_state(Register.confirm_data)
+
+@router.message(Changes.name)
+async def handle_new_adress(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await message.answer('Имя изменено. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
+    await state.set_state(Register.confirm_data)
+
+@router.message(Changes.phone)
+async def handle_new_size(message: Message, state: FSMContext):
+    await state.update_data(phone=message.text)
+    await message.answer('Номер телефона изменен. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
     await state.set_state(Register.confirm_data)
 
 @router.callback_query(Changes.day, F.data.startswith('day_'))
@@ -255,9 +294,25 @@ async def time_call(callback_query: CallbackQuery, state: FSMContext):
     
     await state.set_state(Servis.phone)
 
+@router.message(F.text == 'Ввести данные вручную')
+async def reg_pn(message: Message, state: FSMContext):
+    await state.set_state(Servis.name)
+    await message.answer('Введите ваше имя')
+
+@router.message(Servis.name)
+async def reg_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await message.answer('Введите ваш номер телефона')
+    await state.set_state(Servis.phone)
+
 @router.message(Servis.phone, F.contact)
+@router.message(Servis.phone)
 async def reg_phone(message: Message, state: FSMContext):
-    await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
+    if message.contact:
+        await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
+    else:
+        await state.update_data(phone=message.text)
+    
     data = await state.get_data()
     await message.answer(
         f'Имя: {data["name"]}\n'
@@ -265,8 +320,8 @@ async def reg_phone(message: Message, state: FSMContext):
         f'Номер телефона: {data["phone"]}\n'
         f'День установки: {data["day"]}\n'
         f'Время для установки: с {data["time"]} часов\n'
-        'Проверьте данные и выберите действие'
-        ,reply_markup=kb.confirm_or_change
+        'Проверьте данные и выберите действие',
+        reply_markup=kb.confirm_or_change
     )
     await state.set_state(Servis.confirm_data)
 
@@ -286,76 +341,3 @@ async def save_data_callback(callback: CallbackQuery, state: FSMContext):
         reply_markup=kb.main
     )
     await state.clear()
-
-@router.callback_query(F.data == 'main_change_data')
-async def change_data(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer('Выберите данные для изменения', reply_markup=await change_data_keyboard())
-
-
-
-@router.callback_query(F.data.startswith('change_'))
-async def change_data_callback(callback: CallbackQuery, state: FSMContext):
-    field_to_change = callback.data.split('_')[1]
-
-    if field_to_change == 'size':
-        await state.set_state(Changes.size)
-        await callback.message.answer('Введите новый размер комнаты:')
-    elif field_to_change == 'photo':
-        await state.set_state(Changes.photo)
-        await callback.message.answer('Отправьте новые фотографии (две штуки):')
-    elif field_to_change == 'address':
-        await state.set_state(Changes.adress)
-        await callback.message.answer('Введите новый адрес:')
-    elif field_to_change == 'date':
-        await state.set_state(Changes.day)
-        await callback.message.answer('Выберите новую дату:', reply_markup=await create_date_keyboard())
-    elif field_to_change == 'time':
-        await state.set_state(Changes.time)
-        await callback.message.answer('Выберите новое время:', reply_markup=await create_time_keyboard())
-
-    await callback.answer()
-
-
-@router.message(Changes.adress)
-async def handle_new_adress(message: Message, state: FSMContext):
-    await state.update_data(adress=message.text)
-    await message.answer('Адрес изменен. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
-    await state.set_state(Servis.confirm_data)
-
-@router.message(Changes.size)
-async def handle_new_size(message: Message, state: FSMContext):
-    await state.update_data(size=message.text)
-    await message.answer('Размер комнаты изменен. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
-    await state.set_state(Servis.confirm_data)
-
-@router.callback_query(Changes.day, F.data.startswith('day_'))
-async def process_date_selection(callback_query: CallbackQuery, state: FSMContext):
-    selected_date = callback_query.data[4:] 
-    await state.update_data(day=selected_date)
-    await callback_query.message.answer('Дата изменена. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
-    await state.set_state(Servis.confirm_data)
-
-@router.callback_query(Changes.time, F.data.startswith('time_'))
-async def time_call(callback_query: CallbackQuery, state: FSMContext):
-    selected_time = callback_query.data[5:]
-    await state.update_data(time=selected_time)
-    await callback_query.message.answer('Время изменено. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
-    await state.set_state(Servis.confirm_data)
-
-@router.message(Changes.photo)
-async def handle_new_photo(message: Message, state: FSMContext):
-    photos = []
-   
-    photos.append(message.photo[-1].file_id)
-    print('2  ', photos)
-
-    await state.update_data(photo=photos) 
-    print('3  ', photos)
-     
-    if len(photos) < 2: 
-        await message.answer("Отправьте вторую фотографию") 
-          
-    if len(photos) == 2:
-        await state.update_data(photo=photos)
-        await message.answer('Фотографии изменены. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
-        await state.set_state(Servis.confirm_data)

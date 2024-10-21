@@ -14,7 +14,7 @@ main = ReplyKeyboardMarkup(keyboard=[
 ], resize_keyboard=True, input_field_placeholder='Выберите пункт из меню')
 
 get_number = ReplyKeyboardMarkup(keyboard=[
-    [KeyboardButton(text='Отправить имя и номер', request_contact=True)]
+    [KeyboardButton(text='Отправить имя и номер', request_contact=True), KeyboardButton(text='Ввести данные вручную')]
 ], resize_keyboard=True)
 
 contacts = InlineKeyboardMarkup(inline_keyboard=[
@@ -45,21 +45,23 @@ async def create_date_keyboard():
     
     return keyboard
 
-
-async def change_data_keyboard():
-    keyboard = InlineKeyboardBuilder()
-    keyboard.add(InlineKeyboardButton(text='Размер комнаты', callback_data='change_size'))
-    keyboard.add(InlineKeyboardButton(text='Фото', callback_data='change_photo'))
-    keyboard.add(InlineKeyboardButton(text='Адрес', callback_data='change_address'))
-    keyboard.add(InlineKeyboardButton(text='Дата', callback_data='change_date'))
-    keyboard.add(InlineKeyboardButton(text='Время', callback_data='change_time'))
-    return keyboard.as_markup()
+change_data_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text='Размер комнаты', callback_data='change_size'),InlineKeyboardButton(text='Фото', callback_data='change_photo'), InlineKeyboardButton(text='Имя', callback_data='change_name')],
+    [InlineKeyboardButton(text='Номер телефона', callback_data='change_phone'),InlineKeyboardButton(text='Адрес', callback_data='change_address')],
+    [InlineKeyboardButton(text='Дата', callback_data='change_date'),InlineKeyboardButton(text='Время', callback_data='change_time')],
+])
 
 async def confirm_changes_keyboard():
     keyboard = InlineKeyboardBuilder()
     keyboard.add(InlineKeyboardButton(text='Изменить другие данные', callback_data='main_change_data'))
     keyboard.add(InlineKeyboardButton(text='Сохранить данные', callback_data='save_data'))
     return keyboard.as_markup()
+
+confirm_or_change = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text='Сохранить данные', callback_data='save_data'), InlineKeyboardButton(text='Изменить данные', callback_data='main_change_data')]
+    ]
+)
 
 confirm_or_change = InlineKeyboardMarkup(
     inline_keyboard=[
