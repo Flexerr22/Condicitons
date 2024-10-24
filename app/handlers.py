@@ -1,14 +1,17 @@
-from aiogram import Bot, F, Router
+from aiogram import Bot, F, Router, types
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
 
 from typing import List
-
+from datetime import datetime, time
 import app.keyboards as kb
+import json
 from app.keyboards import create_date_keyboard, create_time_keyboard, change_data_keyboard, confirm_changes_keyboard
+
+import app.database.requests as rq
 
 router = Router()
 
@@ -45,6 +48,7 @@ class Servis(StatesGroup):
 
 @router.message(CommandStart())
 async def cmd_start(message: Message):
+    await rq.set_user(message.from_user.id)
     await message.answer("Добро пожаловать", reply_markup=kb.main)
 
 @router.message(Command("clear"))
@@ -69,23 +73,25 @@ async def zap_yst(message: Message, state: FSMContext):
 async def reg_size(message: Message, state: FSMContext):
     await state.update_data(size=message.text)
     await state.set_state(Register.photo)
-    await message.answer('Скиньте фотографию комнаты изнутри')
+    await message.answer('Скиньте фотографию комнаты изнутри и снаружи (2 фото)')
 
-@router.message(Register.photo, F.photo) 
-async def reg_photo(message: Message, state: FSMContext): 
- 
-    user_data = await state.get_data() 
-    photos: List = user_data.get("photo", [])    
- 
-    photos.append(message.photo[-1].file_id) 
-    await state.update_data(photo=photos) 
-     
-    if len(photos) < 2: 
-        await message.answer("Отправьте фотографию комнаты снаружи") 
-          
-    if len(photos) == 2: 
-        await state.set_state(Register.adress) 
-        await message.answer('Введите ваш адресс')
+
+@router.message(Register.photo, F.media_group_id)
+async def handle_media_group(message: Message, state: FSMContext):
+    data = await state.get_data()
+    media_group = data.get('media_group', [])
+
+    if message.media_group_id not in data:
+        media_group.extend([message.photo[-1].file_id])  # Добавляем только одно фото на медиагруппу
+        await state.update_data(media_group_id=message.media_group_id, media_group=media_group)
+
+    if len(media_group) == 2:
+        await message.answer("Получены две фотографии. Теперь введите ваш адрес.")
+        await state.update_data(photo=media_group)
+        await state.set_state(Register.adress)
+    elif len(media_group) > 2:
+        await message.answer("Вы отправили больше двух фотографий. Пожалуйста, отправьте ровно две фотографии.")
+        await state.update_data(media_group=[])
 
 @router.message(Register.adress)
 async def reg_adress(message: Message, state: FSMContext):
@@ -113,22 +119,20 @@ async def reg_pn(message: Message, state: FSMContext):
     await state.set_state(Register.name)
     await message.answer('Введите ваше имя')
 
-# Хендлер для ввода имени вручную
 @router.message(Register.name)
 async def reg_name(message: Message, state: FSMContext):
     await state.update_data(name=message.text)
     await message.answer('Введите ваш номер телефона')
     await state.set_state(Register.phone)
 
+
 @router.message(Register.phone, F.contact)
-@router.message(Register.phone)
 async def reg_phone(message: Message, state: FSMContext):
     if message.contact:
         await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
     else:
         await state.update_data(phone=message.text)
     
-    # Вывод итоговых данных
     data = await state.get_data()
     await message.answer(
         f'Ваш размер комнаты: {data["size"]}\n'
@@ -142,12 +146,103 @@ async def reg_phone(message: Message, state: FSMContext):
     )
     await state.set_state(Register.confirm_data)
 
+@router.message(F.text == 'Запись на обслуживание')
+async def reg_size_servis(message: Message, state: FSMContext):
+    await state.update_data(size=0)
+    await state.set_state(Servis.photo)
+    await message.answer('Скиньте пожалуйста фотографию, где установлен внутренний блок кондиционера.')
+
+@router.message(Servis.photo, F.media_group_id)
+async def handle_media_group(message: Message, state: FSMContext):
+    data = await state.get_data()
+    media_group = data.get('media_group', [])
+
+    if message.media_group_id not in data:
+        media_group.extend([message.photo[-1].file_id])  # Добавляем только одно фото на медиагруппу
+        await state.update_data(media_group_id=message.media_group_id, media_group=media_group)
+
+    if len(media_group) == 2:
+        await message.answer("Получены две фотографии. Теперь введите ваш адрес.")
+        await state.update_data(photo=media_group)
+        await state.set_state(Servis.adress)
+    elif len(media_group) > 2:
+        await message.answer("Вы отправили больше двух фотографий. Пожалуйста, отправьте ровно две фотографии.")
+        await state.update_data(media_group=[])
+
+@router.message(Servis.adress)
+async def reg_adress(message: Message, state: FSMContext):
+    await state.update_data(adress=message.text)
+    await state.set_state(Servis.day)
+    await message.answer('Выбери день удобный вам для приезда на обслуживание', reply_markup=await create_date_keyboard())
+
+@router.callback_query(F.data.startswith('day_'))
+async def process_date_selection(callback_query: CallbackQuery, state: FSMContext):
+    selected_date = callback_query.data[4:] 
+    await state.update_data(day=selected_date)
+    await callback_query.message.answer(f'Вы выбрали дату: {selected_date}. Теперь выберите удобное время для приезда на обслуживание.', reply_markup=await create_time_keyboard())
+    await state.set_state(Servis.time)
+
+@router.callback_query(F.data.startswith('time_'))
+async def time_call(callback_query: CallbackQuery, state: FSMContext):
+    selected_time = callback_query.data[5:]
+    await state.update_data(time=selected_time)
+    await callback_query.message.answer(f'Вы выбрали время: с {selected_time} часов. Пожалуйста, отправьте ваш контакт для завершения записи.', reply_markup=kb.get_number)
+    
+    await state.set_state(Servis.phone)
+
+@router.message(F.text == 'Ввести данные вручную')
+async def reg_pn(message: Message, state: FSMContext):
+    await state.set_state(Servis.name)
+    await message.answer('Введите ваше имя')
+
+@router.message(Servis.name)
+async def reg_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await message.answer('Введите ваш номер телефона')
+    await state.set_state(Servis.phone)
+
+@router.message(Servis.phone, F.contact)
+async def reg_phone(message: Message, state: FSMContext):
+    if message.contact:
+        await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
+    else:
+        await state.update_data(phone=message.text)
+    
+    data = await state.get_data()
+    await message.answer(
+        f'Имя: {data["name"]}\n'
+        f'Адрес: {data["adress"]}\n'
+        f'Номер телефона: {data["phone"]}\n'
+        f'День установки: {data["day"]}\n'
+        f'Время для установки: с {data["time"]} часов\n'
+        'Проверьте данные и выберите действие',
+        reply_markup=kb.confirm_or_change
+    )
+    await state.set_state(Servis.confirm_data)
+
+
 @router.callback_query(F.data == 'save_data')
 async def save_data_callback(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    await callback.message.answer_photo(
-        photo=data['photo'][0],
-        caption=(
+    print(data)
+    try:
+        day_obj = datetime.strptime(data['day'], '%d %B %Y').date()
+    except ValueError:
+        await callback.message.answer('Произошла ошибка при обработке даты. Пожалуйста, попробуйте снова.')
+        await state.clear()
+        return 
+
+    try:
+        start_hour = int(data['time'].split(' до ')[0]) 
+        time_obj = time(hour=start_hour, minute=0, second=0)  
+    except (ValueError, IndexError) as e:
+        await callback.message.answer('Произошла ошибка при обработке времени. Пожалуйста, попробуйте снова.')
+        await state.clear()
+        return
+
+    if ('size' in data and data['size']!=0) and 'media_group' in data and len(data['media_group']) > 0:
+        media_group_json = json.dumps(data['media_group'])
+        caption = (
             'Спасибо за обращение, запись успешно создана\n'
             f'Ваш размер комнаты: {data["size"]}\n'
             f'Имя: {data["name"]}\n'
@@ -155,10 +250,45 @@ async def save_data_callback(callback: CallbackQuery, state: FSMContext):
             f'Номер телефона: {data["phone"]}\n'
             f'День установки: {data["day"]}\n'
             f'Время для установки: с {data["time"]} часов'
-        ), 
+        )
+
+        await rq.set_installation(
+            user_id=callback.from_user.id, 
+            user_name=data['name'], 
+            adress=data['adress'], 
+            size=str(data['size']),
+            photo=media_group_json,  
+            telephone_number=data['phone'], 
+            date=day_obj,       
+            time=time_obj  
+        )
+    else:
+        caption = (
+            'Спасибо за обращение, запись успешно создана\n'
+            f'Имя: {data["name"]}\n'
+            f'Адрес: {data["adress"]}\n'
+            f'Номер телефона: {data["phone"]}\n'
+            f'День установки: {data["day"]}\n'
+            f'Время для установки: с {data["time"]} часов'
+        )
+        
+        await rq.set_service(
+            user_id=callback.from_user.id, 
+            user_name=data['name'], 
+            adress=data['adress'], 
+            telephone_number=data['phone'], 
+            date=day_obj,     
+            photo=media_group_json,     
+            time=time_obj  
+        )
+    await callback.message.answer_photo(
+        photo=data['photo'][0],
+        caption=caption,
         reply_markup=kb.main
     )
+
     await state.clear()
+
 
 @router.callback_query(F.data == 'main_change_data')
 async def change_data(callback: CallbackQuery, state: FSMContext):
@@ -251,93 +381,13 @@ async def handle_new_photo(message: Message, state: FSMContext):
         await message.answer('Фотографии изменены. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
         await state.set_state(Register.confirm_data)
 
-@router.message(F.text == 'Запись на обслуживание')
-async def reg_size_servis(message: Message, state: FSMContext):
-    await state.update_data(size=message.text)
-    await state.set_state(Servis.photo)
-    await message.answer('Скиньте пожалуйста фотографию, где установлен внутренний блок кондиционера.')
 
-@router.message(Servis.photo)
-async def reg_photo_servis(message: Message, state: FSMContext):
-    user_data = await state.get_data() 
-    photos: List = user_data.get("photo", [])    
- 
-    photos.append(message.photo[-1].file_id) 
-    await state.update_data(photo=photos) 
-     
-    if len(photos) < 2: 
-        await message.answer("Скиньте пожалуйста фотографию, где установлен наружний блок кондиционера.") 
-          
-    if len(photos) == 2: 
-        print('цикл') 
-        await state.set_state(Servis.adress) 
-        await message.answer('Введите ваш адресс')
+@router.message(F.text == 'Каталог товаров')
+async def catalog(message: Message):
+    items_text = await kb.show_items(message)
+    await message.answer(items_text)
 
-@router.message(Servis.adress)
-async def reg_adress(message: Message, state: FSMContext):
-    await state.update_data(adress=message.text)
-    await state.set_state(Servis.day)
-    await message.answer('Выбери день удобный вам для приезда на обслуживание', reply_markup=await create_date_keyboard())
-
-@router.callback_query(F.data.startswith('day_'))
-async def process_date_selection(callback_query: CallbackQuery, state: FSMContext):
-    selected_date = callback_query.data[4:] 
-    await state.update_data(day=selected_date)
-    await callback_query.message.answer(f'Вы выбрали дату: {selected_date}. Теперь выберите удобное время для приезда на обслуживание.', reply_markup=await create_time_keyboard())
-    await state.set_state(Servis.time)
-
-@router.callback_query(F.data.startswith('time_'))
-async def time_call(callback_query: CallbackQuery, state: FSMContext):
-    selected_time = callback_query.data[5:]
-    await state.update_data(time=selected_time)
-    await callback_query.message.answer(f'Вы выбрали время: с {selected_time} часов. Пожалуйста, отправьте ваш контакт для завершения записи.', reply_markup=kb.get_number)
-    
-    await state.set_state(Servis.phone)
-
-@router.message(F.text == 'Ввести данные вручную')
-async def reg_pn(message: Message, state: FSMContext):
-    await state.set_state(Servis.name)
-    await message.answer('Введите ваше имя')
-
-@router.message(Servis.name)
-async def reg_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await message.answer('Введите ваш номер телефона')
-    await state.set_state(Servis.phone)
-
-@router.message(Servis.phone, F.contact)
-@router.message(Servis.phone)
-async def reg_phone(message: Message, state: FSMContext):
-    if message.contact:
-        await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
-    else:
-        await state.update_data(phone=message.text)
-    
-    data = await state.get_data()
-    await message.answer(
-        f'Имя: {data["name"]}\n'
-        f'Адрес: {data["adress"]}\n'
-        f'Номер телефона: {data["phone"]}\n'
-        f'День установки: {data["day"]}\n'
-        f'Время для установки: с {data["time"]} часов\n'
-        'Проверьте данные и выберите действие',
-        reply_markup=kb.confirm_or_change
-    )
-    await state.set_state(Servis.confirm_data)
-
-@router.callback_query(F.data == 'save_data')
-async def save_data_callback(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    await callback.message.answer_photo(
-        photo=data['photo'][0],
-        caption=(
-            'Спасибо за обращение, запись успешно создана\n'
-            f'Имя: {data["name"]}\n'
-            f'Адрес: {data["adress"]}\n'
-            f'Номер телефона: {data["phone"]}\n'
-            f'День установки: {data["day"]}\n'
-            f'Время для установки: с {data["time"]} часов'
-        ), 
-        reply_markup=kb.main
-    )
-    await state.clear()
+@router.callback_query(F.data.startswith('item_'))
+async def item_details(callback: CallbackQuery):
+    item_data = await rq.get_items(callback.data)
+    await callback.message.answer_photo(photo=item_data.photo, caption=f'{item_data.name}\n{item_data.description}\n{item_data.price} ₽')

@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
+from app.database.requests import get_items
+
 locale.setlocale(locale.LC_TIME, 'Russian_Russia.1251')
 
 main = ReplyKeyboardMarkup(keyboard=[
@@ -68,3 +70,15 @@ confirm_or_change = InlineKeyboardMarkup(
         [InlineKeyboardButton(text='Сохранить данные', callback_data='save_data'), InlineKeyboardButton(text='Изменить данные', callback_data='main_change_data')]
     ]
 )
+
+async def show_items(message):
+    all_items = await get_items()
+    
+    for item in all_items:
+        await message.answer_photo(photo=item.photo, caption=(
+            f"Название: {item.name}\n"
+            f"Описание: {item.description}\n"
+            f"Цена: {item.price} ₽"
+        ))
+
+    return "Все товары отправлены."

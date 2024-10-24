@@ -1,7 +1,10 @@
 import asyncio
 import logging
+import os
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
+from dotenv import load_dotenv
+from app.database.models import async_main
 
 from app.handlers import router
 
@@ -13,7 +16,9 @@ async def set_default_commands(bot: Bot):
     ])
 
 async def main():
-    bot = Bot(token='7641008131:AAHY5nGar9rIG0xEBr7duB1bElV1AgaV1Ns')
+    load_dotenv()
+    await async_main()
+    bot = Bot(token=os.getenv('TOKEN'))
     dp = Dispatcher()
     dp.include_router(router)
     await set_default_commands(bot)
