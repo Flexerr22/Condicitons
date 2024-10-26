@@ -1,7 +1,6 @@
 from app.database.models import async_session
 from app.database.models import User, Product, Installation_note, Service_note, Cart
 from sqlalchemy import select
-import json
 
 async def set_user(tg_id):
     async with async_session() as session:
@@ -13,27 +12,28 @@ async def set_user(tg_id):
 
 async def set_installation(user_id, user_name, adress, size, photo, telephone_number, date, time):
     async with async_session() as session:
-        installation = await session.scalar(select(Installation_note).where(Installation_note.user_id == user_id))
+        
+        intsallation = await session.scalar(select(Installation_note).where(Installation_note.user_id==user_id))
 
-        if not installation:
-            photo_json = json.dumps(photo)
-
+        if not intsallation:
             session.add(Installation_note(user_id=user_id, user_name=user_name,
-                                          adress=adress, size=size, photo=photo_json, 
-                                          telephone_number=telephone_number, date=date, time=time))
+                                           adress=adress, size=size, photo=photo, telephone_number=telephone_number,
+                                             date=date, time=time))
             await session.commit()
+
+
 
 async def set_service(user_id, user_name, adress, photo, telephone_number, date, time):
     async with async_session() as session:
-        service = await session.scalar(select(Service_note).where(Service_note.user_id == user_id))
+        
+        service = await session.scalar(select(Service_note).where(Service_note.user_id==user_id))
 
         if not service:
-            photo_json = json.dumps(photo)
-
             session.add(Service_note(user_id=user_id, user_name=user_name,
-                                     adress=adress, photo=photo_json, 
-                                     telephone_number=telephone_number, date=date, time=time))
+                                           adress=adress, photo=photo, telephone_number=telephone_number,
+                                             date=date, time=time))
             await session.commit()
+
 
 async def get_items():
     async with async_session() as session:

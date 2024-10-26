@@ -1,3 +1,5 @@
+import json
+import re
 from aiogram import Bot, F, Router, types
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
@@ -8,7 +10,6 @@ from aiogram.exceptions import TelegramBadRequest
 from typing import List
 from datetime import datetime, time
 import app.keyboards as kb
-import json
 from app.keyboards import create_date_keyboard, create_time_keyboard, change_data_keyboard, confirm_changes_keyboard
 
 import app.database.requests as rq
@@ -71,27 +72,67 @@ async def zap_yst(message: Message, state: FSMContext):
 
 @router.message(Register.size)
 async def reg_size(message: Message, state: FSMContext):
-    await state.update_data(size=message.text)
-    await state.set_state(Register.photo)
-    await message.answer('Скиньте фотографию комнаты изнутри и снаружи (2 фото)')
-
+    if message.text.isdigit():
+        await state.update_data(size=message.text)
+        await state.set_state(Register.photo)
+        await message.answer('Отправьте фотографию комнаты изнутри и снаружи (2 фото)')
+    else:
+        await message.answer('Неверный формат квадратуры. Введите число.')
 
 @router.message(Register.photo, F.media_group_id)
 async def handle_media_group(message: Message, state: FSMContext):
+    # Получаем данные из состояния
     data = await state.get_data()
     media_group = data.get('media_group', [])
 
+    # Добавляем фото из медиагруппы только один раз
     if message.media_group_id not in data:
         media_group.extend([message.photo[-1].file_id])  # Добавляем только одно фото на медиагруппу
         await state.update_data(media_group_id=message.media_group_id, media_group=media_group)
 
+    # Проверяем количество фото в медиагруппе
     if len(media_group) == 2:
         await message.answer("Получены две фотографии. Теперь введите ваш адрес.")
         await state.update_data(photo=media_group)
         await state.set_state(Register.adress)
     elif len(media_group) > 2:
         await message.answer("Вы отправили больше двух фотографий. Пожалуйста, отправьте ровно две фотографии.")
-        await state.update_data(media_group=[])
+        await state.update_data(media_group=[])  # Сброс состояния медиагруппы
+
+# Обработчик для одиночных фото
+@router.message(Register.photo, F.photo & F.media_group_id.is_(None))  # Проверяем, что фото не в составе альбома
+async def handle_single_photo(message: Message, state: FSMContext):
+    data = await state.get_data()
+    photos = data.get('photos', [])
+
+    # Добавляем фото в список
+    photos.append(message.photo[-1].file_id)
+
+    # Обновляем данные в состоянии
+    await state.update_data(photos=photos)
+
+    # Проверяем, если получили две фотографии
+    if len(photos) == 2:
+        await message.answer("Получены две фотографии. Теперь введите ваш адрес.")
+        await state.set_state(Register.adress)
+    elif len(photos) > 2:
+        await message.answer("Вы отправили больше двух фотографий. Пожалуйста, отправьте ровно две фотографии.")
+        await state.update_data(photos=[])  # Сброс состояния одиночных фото
+# @router.message(Register.photo, F.photo)
+# async def reg_photo(message: Message, state: FSMContext): 
+ 
+#     user_data = await state.get_data() 
+#     photos: List = user_data.get("photo", [])    
+ 
+#     photos.append(message.photo[-1].file_id) 
+#     await state.update_data(photo=photos) 
+     
+#     if len(photos) < 2: 
+#         await message.answer("Отправьте фотографию комнаты снаружи") 
+          
+#     if len(photos) == 2: 
+#         await state.set_state(Register.adress) 
+#         await message.answer('Введите ваш адресс')
 
 @router.message(Register.adress)
 async def reg_adress(message: Message, state: FSMContext):
@@ -119,6 +160,7 @@ async def reg_pn(message: Message, state: FSMContext):
     await state.set_state(Register.name)
     await message.answer('Введите ваше имя')
 
+# Хендлер для ввода имени вручную
 @router.message(Register.name)
 async def reg_name(message: Message, state: FSMContext):
     await state.update_data(name=message.text)
@@ -134,6 +176,15 @@ async def reg_phone(message: Message, state: FSMContext):
         await state.update_data(phone=message.text)
     
     data = await state.get_data()
+    photos = data.get("media_group", [])
+    if len(photos) >= 2:
+        await message.answer_media_group(media=[
+            types.InputMediaPhoto(media=photos[0]),
+            types.InputMediaPhoto(media=photos[1]),
+        ])
+    
+    # Вывод итоговых данных
+    data = await state.get_data()
     await message.answer(
         f'Ваш размер комнаты: {data["size"]}\n'
         f'Имя: {data["name"]}\n'
@@ -146,85 +197,12 @@ async def reg_phone(message: Message, state: FSMContext):
     )
     await state.set_state(Register.confirm_data)
 
-@router.message(F.text == 'Запись на обслуживание')
-async def reg_size_servis(message: Message, state: FSMContext):
-    await state.update_data(size=0)
-    await state.set_state(Servis.photo)
-    await message.answer('Скиньте пожалуйста фотографию, где установлен внутренний блок кондиционера.')
-
-@router.message(Servis.photo, F.media_group_id)
-async def handle_media_group(message: Message, state: FSMContext):
-    data = await state.get_data()
-    media_group = data.get('media_group', [])
-
-    if message.media_group_id not in data:
-        media_group.extend([message.photo[-1].file_id])  # Добавляем только одно фото на медиагруппу
-        await state.update_data(media_group_id=message.media_group_id, media_group=media_group)
-
-    if len(media_group) == 2:
-        await message.answer("Получены две фотографии. Теперь введите ваш адрес.")
-        await state.update_data(photo=media_group)
-        await state.set_state(Servis.adress)
-    elif len(media_group) > 2:
-        await message.answer("Вы отправили больше двух фотографий. Пожалуйста, отправьте ровно две фотографии.")
-        await state.update_data(media_group=[])
-
-@router.message(Servis.adress)
-async def reg_adress(message: Message, state: FSMContext):
-    await state.update_data(adress=message.text)
-    await state.set_state(Servis.day)
-    await message.answer('Выбери день удобный вам для приезда на обслуживание', reply_markup=await create_date_keyboard())
-
-@router.callback_query(F.data.startswith('day_'))
-async def process_date_selection(callback_query: CallbackQuery, state: FSMContext):
-    selected_date = callback_query.data[4:] 
-    await state.update_data(day=selected_date)
-    await callback_query.message.answer(f'Вы выбрали дату: {selected_date}. Теперь выберите удобное время для приезда на обслуживание.', reply_markup=await create_time_keyboard())
-    await state.set_state(Servis.time)
-
-@router.callback_query(F.data.startswith('time_'))
-async def time_call(callback_query: CallbackQuery, state: FSMContext):
-    selected_time = callback_query.data[5:]
-    await state.update_data(time=selected_time)
-    await callback_query.message.answer(f'Вы выбрали время: с {selected_time} часов. Пожалуйста, отправьте ваш контакт для завершения записи.', reply_markup=kb.get_number)
-    
-    await state.set_state(Servis.phone)
-
-@router.message(F.text == 'Ввести данные вручную')
-async def reg_pn(message: Message, state: FSMContext):
-    await state.set_state(Servis.name)
-    await message.answer('Введите ваше имя')
-
-@router.message(Servis.name)
-async def reg_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await message.answer('Введите ваш номер телефона')
-    await state.set_state(Servis.phone)
-
-@router.message(Servis.phone, F.contact)
-async def reg_phone(message: Message, state: FSMContext):
-    if message.contact:
-        await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
-    else:
-        await state.update_data(phone=message.text)
-    
-    data = await state.get_data()
-    await message.answer(
-        f'Имя: {data["name"]}\n'
-        f'Адрес: {data["adress"]}\n'
-        f'Номер телефона: {data["phone"]}\n'
-        f'День установки: {data["day"]}\n'
-        f'Время для установки: с {data["time"]} часов\n'
-        'Проверьте данные и выберите действие',
-        reply_markup=kb.confirm_or_change
-    )
-    await state.set_state(Servis.confirm_data)
-
 
 @router.callback_query(F.data == 'save_data')
 async def save_data_callback(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     print(data)
+    # Преобразование даты в объект date 
     try:
         day_obj = datetime.strptime(data['day'], '%d %B %Y').date()
     except ValueError:
@@ -232,6 +210,7 @@ async def save_data_callback(callback: CallbackQuery, state: FSMContext):
         await state.clear()
         return 
 
+    # Преобразование времени в объект time
     try:
         start_hour = int(data['time'].split(' до ')[0]) 
         time_obj = time(hour=start_hour, minute=0, second=0)  
@@ -239,9 +218,10 @@ async def save_data_callback(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer('Произошла ошибка при обработке времени. Пожалуйста, попробуйте снова.')
         await state.clear()
         return
-
+    media_group_json = json.dumps(data['media_group'])
+    # Проверка наличия ключа 'size' и формирование сообщения
     if ('size' in data and data['size']!=0) and 'media_group' in data and len(data['media_group']) > 0:
-        media_group_json = json.dumps(data['media_group'])
+        
         caption = (
             'Спасибо за обращение, запись успешно создана\n'
             f'Ваш размер комнаты: {data["size"]}\n'
@@ -281,6 +261,8 @@ async def save_data_callback(callback: CallbackQuery, state: FSMContext):
             photo=media_group_json,     
             time=time_obj  
         )
+
+    # Отправка сообщения после всех операций
     await callback.message.answer_photo(
         photo=data['photo'][0],
         caption=caption,
@@ -289,6 +271,23 @@ async def save_data_callback(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
 
+    # try:
+    #     day_obj = datetime.strptime(data['day'], '%d %B %Y').date()  # Преобразуем в объект date
+    #     formatted_date = day_obj.strftime('%Y-%m-%d') 
+    # except ValueError:
+    #     formatted_date = None  # Обработка ошибки, если дата невалидна
+
+    # # Преобразование времени
+    # start_time = data['time'].split(' до ')[0]  # Получаем время начала
+    # formatted_time = f"{start_time}:00:00"  # Форматируем время в HH:MM:SS
+
+    # # Обновляем словарь
+    # data['day'] = formatted_date
+    # data['time'] = formatted_time
+    
+    # await rq.set_installation(user_id=callback.from_user.id, user_name=data['name'] , adress=data['adress'], size=data['size'],
+    #                           photo='photo_path', telephone_number=data['phone'], date=data['day'], time=data['time'])
+    await state.clear()
 
 @router.callback_query(F.data == 'main_change_data')
 async def change_data(callback: CallbackQuery, state: FSMContext):
@@ -333,9 +332,12 @@ async def handle_new_adress(message: Message, state: FSMContext):
 
 @router.message(Changes.size)
 async def handle_new_size(message: Message, state: FSMContext):
-    await state.update_data(size=message.text)
-    await message.answer('Размер комнаты изменен. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
-    await state.set_state(Register.confirm_data)
+    if message.text.isdigit():
+        await state.update_data(size=message.text)
+        await message.answer('Размер комнаты изменен. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
+        await state.set_state(Register.confirm_data)
+    else:
+        await message.answer('Неверный формат квадратуры. Введите число.')
 
 @router.message(Changes.name)
 async def handle_new_adress(message: Message, state: FSMContext):
@@ -380,6 +382,124 @@ async def handle_new_photo(message: Message, state: FSMContext):
         await state.update_data(photo=photos)
         await message.answer('Фотографии изменены. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
         await state.set_state(Register.confirm_data)
+
+@router.message(F.text == 'Запись на обслуживание')
+async def reg_size_servis(message: Message, state: FSMContext):
+    await state.update_data(size=0)
+    await state.set_state(Servis.photo)
+    await message.answer('Отправьте фотографию комнаты изнутри и снаружи (2 фото)')
+
+# @router.message(Servis.photo)
+# async def reg_photo_servis(message: Message, state: FSMContext):
+#     user_data = await state.get_data() 
+#     photos: List = user_data.get("photo", [])    
+ 
+#     photos.append(message.photo[-1].file_id) 
+#     await state.update_data(photo=photos) 
+     
+#     if len(photos) < 2: 
+#         await message.answer("Скиньте пожалуйста фотографию, где установлен наружний блок кондиционера.") 
+          
+#     if len(photos) == 2: 
+#         print('цикл') 
+#         await state.set_state(Servis.adress) 
+#         await message.answer('Введите ваш адресс')
+
+
+
+@router.message(Servis.photo, F.media_group_id)
+async def handle_media_group(message: Message, state: FSMContext):
+    # Получаем данные из состояния
+    data = await state.get_data()
+    media_group = data.get('media_group', [])
+
+    # Добавляем фото из медиагруппы только один раз
+    if message.media_group_id not in data:
+        media_group.extend([message.photo[-1].file_id])  # Добавляем только одно фото на медиагруппу
+        await state.update_data(media_group_id=message.media_group_id, media_group=media_group)
+
+    # Проверяем количество фото в медиагруппе
+    if len(media_group) == 2:
+        await message.answer("Получены две фотографии. Теперь введите ваш адрес.")
+        await state.update_data(photo=media_group)
+        await state.set_state(Servis.adress)
+    elif len(media_group) > 2:
+        await message.answer("Вы отправили больше двух фотографий. Пожалуйста, отправьте ровно две фотографии.")
+        await state.update_data(media_group=[])  # Сброс состояния медиагруппы
+
+# Обработчик для одиночных фото
+@router.message(Servis.photo, F.photo & F.media_group_id.is_(None))  # Проверяем, что фото не в составе альбома
+async def handle_single_photo(message: Message, state: FSMContext):
+    data = await state.get_data()
+    photos = data.get('photos', [])
+
+    # Добавляем фото в список
+    photos.append(message.photo[-1].file_id)
+
+    # Обновляем данные в состоянии
+    await state.update_data(photo=photos)
+
+    # Проверяем, если получили две фотографии
+    if len(photos) == 2:
+        await message.answer("Получены две фотографии. Теперь введите ваш адрес.")
+        await state.set_state(Servis.adress)
+    elif len(photos) > 2:
+        await message.answer("Вы отправили больше двух фотографий. Пожалуйста, отправьте ровно две фотографии.")
+        await state.update_data(photos=[])  # Сброс состояния одиночных фото
+
+
+@router.message(Servis.adress)
+async def reg_adress(message: Message, state: FSMContext):
+    await state.update_data(adress=message.text)
+    await state.set_state(Servis.day)
+    await message.answer('Выбери день удобный вам для приезда на обслуживание', reply_markup=await create_date_keyboard())
+
+@router.callback_query(F.data.startswith('day_'))
+async def process_date_selection(callback_query: CallbackQuery, state: FSMContext):
+    selected_date = callback_query.data[4:] 
+    await state.update_data(day=selected_date)
+    await callback_query.message.answer(f'Вы выбрали дату: {selected_date}. Теперь выберите удобное время для приезда на обслуживание.', reply_markup=await create_time_keyboard())
+    await state.set_state(Servis.time)
+
+@router.callback_query(F.data.startswith('time_'))
+async def time_call(callback_query: CallbackQuery, state: FSMContext):
+    selected_time = callback_query.data[5:]
+    await state.update_data(time=selected_time)
+    await callback_query.message.answer(f'Вы выбрали время: с {selected_time} часов. Пожалуйста, отправьте ваш контакт для завершения записи.', reply_markup=kb.get_number)
+    
+    await state.set_state(Servis.phone)
+
+@router.message(F.text == 'Ввести данные вручную')
+async def reg_pn(message: Message, state: FSMContext):
+    await state.set_state(Servis.name)
+    await message.answer('Введите ваше имя')
+
+@router.message(Servis.name)
+async def reg_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await message.answer('Введите ваш номер телефона')
+    await state.set_state(Servis.phone)
+
+@router.message(Servis.phone, F.contact)
+async def reg_phone(message: Message, state: FSMContext):
+    if message.contact:
+        await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
+    else:
+        await state.update_data(phone=message.text)
+    
+    data = await state.get_data()
+
+    await message.answer(
+        f'Имя: {data["name"]}\n'
+        f'Адрес: {data["adress"]}\n'
+        f'Номер телефона: {data["phone"]}\n'
+        f'День установки: {data["day"]}\n'
+        f'Время для установки: с {data["time"]} часов\n'
+        'Проверьте данные и выберите действие',
+        reply_markup=kb.confirm_or_change
+    )
+    await state.set_state(Servis.confirm_data)
+
 
 
 @router.message(F.text == 'Каталог товаров')

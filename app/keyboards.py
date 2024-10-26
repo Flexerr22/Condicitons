@@ -71,6 +71,10 @@ confirm_or_change = InlineKeyboardMarkup(
     ]
 )
 
+add_favourites = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text='Добавить в корзину', callback_data='add_favourites')]
+])
+
 async def show_items(message):
     all_items = await get_items()
     
@@ -79,6 +83,6 @@ async def show_items(message):
             f"Название: {item.name}\n"
             f"Описание: {item.description}\n"
             f"Цена: {item.price} ₽"
-        ))
-
-    return "Все товары отправлены."
+        ),
+        reply_markup= add_favourites)
+    return 
