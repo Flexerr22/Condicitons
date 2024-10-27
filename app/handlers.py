@@ -11,6 +11,7 @@ from typing import List
 from datetime import datetime, time
 import app.keyboards as kb
 from app.keyboards import create_date_keyboard, create_time_keyboard, change_data_keyboard, confirm_changes_keyboard
+from aiogram.utils.keyboard import InlineKeyboardMarkup, InlineKeyboardButton
 
 import app.database.requests as rq
 
@@ -94,6 +95,7 @@ async def handle_media_group(message: Message, state: FSMContext):
     if len(media_group) == 2:
         await message.answer("Получены две фотографии. Теперь введите ваш адрес.")
         await state.update_data(photo=media_group)
+        print(media_group)
         await state.set_state(Register.adress)
     elif len(media_group) > 2:
         await message.answer("Вы отправили больше двух фотографий. Пожалуйста, отправьте ровно две фотографии.")
@@ -152,8 +154,7 @@ async def time_call(callback_query: CallbackQuery, state: FSMContext):
     selected_time = callback_query.data[5:]
     await state.update_data(time=selected_time)
     await callback_query.message.answer(f'Вы выбрали время: с {selected_time} часов. Пожалуйста, отправьте ваш контакт для завершения записи.', reply_markup=kb.get_number)
-    
-    await state.set_state(Register.phone)
+
 
 @router.message(F.text == 'Ввести данные вручную')
 async def reg_pn(message: Message, state: FSMContext):
@@ -168,7 +169,30 @@ async def reg_name(message: Message, state: FSMContext):
     await state.set_state(Register.phone)
 
 
-@router.message(Register.phone, F.contact)
+@router.message(Register.phone)
+async def reg_phone_hand(message: Message, state: FSMContext):
+    phone = message.text
+
+    if len(phone) == 11 and (phone.isdigit()):
+        await state.update_data(phone=phone)
+
+        data = await state.get_data()
+        await message.answer(
+            f'Ваш размер комнаты: {data["size"]}\n'
+            f'Имя: {data["name"]}\n'
+            f'Адрес: {data["adress"]}\n'
+            f'Номер телефона: {data["phone"]}\n'
+            f'День установки: {data["day"]}\n'
+            f'Время для установки: с {data["time"]} часов\n'
+            'Проверьте данные и выберите действие',
+            reply_markup=kb.confirm_or_change
+        )
+        await state.set_state(Servis.confirm_data)
+    else:
+        await message.answer('Неверный формат телефона, попробуйте заново.\nПравильный формат: +7xxxxxxxxxx или 8xxxxxxxxxx')
+
+
+@router.message(F.contact)
 async def reg_phone(message: Message, state: FSMContext):
     if message.contact:
         await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
@@ -347,9 +371,17 @@ async def handle_new_adress(message: Message, state: FSMContext):
 
 @router.message(Changes.phone)
 async def handle_new_size(message: Message, state: FSMContext):
-    await state.update_data(phone=message.text)
-    await message.answer('Номер телефона изменен. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
-    await state.set_state(Register.confirm_data)
+    phone = message.text
+
+    phone = message.text
+    phone.replace('+', '')
+
+    if len(phone) == 11 and (phone.isdigit()):
+        await state.update_data(phone=phone)
+        await message.answer('Номер телефона изменен. Желаете изменить что-то еще?', reply_markup=await confirm_changes_keyboard())
+        await state.set_state(Register.confirm_data)
+    else:
+        await message.answer('Неверный формат телефона, попробуйте заново.\nПравильный формат: +7xxxxxxxxxx или 8xxxxxxxxxx')
 
 @router.callback_query(Changes.day, F.data.startswith('day_'))
 async def process_date_selection(callback_query: CallbackQuery, state: FSMContext):
@@ -370,10 +402,7 @@ async def handle_new_photo(message: Message, state: FSMContext):
     photos = []
    
     photos.append(message.photo[-1].file_id)
-    print('2  ', photos)
-
     await state.update_data(photo=photos) 
-    print('3  ', photos)
      
     if len(photos) < 2: 
         await message.answer("Отправьте вторую фотографию") 
@@ -466,8 +495,6 @@ async def time_call(callback_query: CallbackQuery, state: FSMContext):
     selected_time = callback_query.data[5:]
     await state.update_data(time=selected_time)
     await callback_query.message.answer(f'Вы выбрали время: с {selected_time} часов. Пожалуйста, отправьте ваш контакт для завершения записи.', reply_markup=kb.get_number)
-    
-    await state.set_state(Servis.phone)
 
 @router.message(F.text == 'Ввести данные вручную')
 async def reg_pn(message: Message, state: FSMContext):
@@ -480,7 +507,31 @@ async def reg_name(message: Message, state: FSMContext):
     await message.answer('Введите ваш номер телефона')
     await state.set_state(Servis.phone)
 
-@router.message(Servis.phone, F.contact)
+
+@router.message(Servis.phone)
+async def reg_phone_hand(message: Message, state: FSMContext):
+    phone = message.text
+    phone.replace('+', '')
+
+    if len(phone) == 11 and (phone.isdigit()):
+        await state.update_data(phone=phone)
+
+        data = await state.get_data()
+        await message.answer(
+            f'Имя: {data["name"]}\n'
+            f'Адрес: {data["adress"]}\n'
+            f'Номер телефона: {data["phone"]}\n'
+            f'День установки: {data["day"]}\n'
+            f'Время для установки: с {data["time"]} часов\n'
+            'Проверьте данные и выберите действие',
+            reply_markup=kb.confirm_or_change
+        )
+        await state.set_state(Servis.confirm_data)
+    else:
+        await message.answer('Неверный формат телефона, попробуйте заново.\nПравильный формат: +7xxxxxxxxxx или 8xxxxxxxxxx')
+
+
+@router.message(F.contact)
 async def reg_phone(message: Message, state: FSMContext):
     if message.contact:
         await state.update_data(phone=message.contact.phone_number, name=message.contact.first_name)
@@ -501,7 +552,6 @@ async def reg_phone(message: Message, state: FSMContext):
     await state.set_state(Servis.confirm_data)
 
 
-
 @router.message(F.text == 'Каталог товаров')
 async def catalog(message: Message):
     items_text = await kb.show_items(message)
@@ -511,3 +561,99 @@ async def catalog(message: Message):
 async def item_details(callback: CallbackQuery):
     item_data = await rq.get_items(callback.data)
     await callback.message.answer_photo(photo=item_data.photo, caption=f'{item_data.name}\n{item_data.description}\n{item_data.price} ₽')
+
+
+@router.message(F.text == 'Корзина')
+async def cart(message: Message):
+    user_id = message.from_user.id
+    user = await rq.get_user(user_id)
+
+    if user:
+        cart_products = await rq.get_cart(user_id=user_id)
+
+        if cart_products:
+            total_products = len(cart_products)
+            total_price = sum(product['total_price'] for product in cart_products)
+
+            drop_all = InlineKeyboardButton(
+                text="Очистить корзину",
+                callback_data=f"drop_all:{user_id}"
+            )
+            keyboard1 = InlineKeyboardMarkup(inline_keyboard=[[drop_all]])
+            cart_text = (
+                f"🛒 **Ваша корзина:**\n\n"
+                f"**Количество товаров:** {total_products}\n"
+                f"**Общая стоимость:** {total_price} ₽\n\n"
+            )
+
+            await message.answer(cart_text, reply_markup=keyboard1)
+
+            for product in cart_products:
+                delete_button = InlineKeyboardButton(
+                    text="Удалить",
+                    callback_data=f"delete_from_cart:{product['product_name']}" 
+                )
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[[delete_button]])
+
+                product_text = (
+                    f"**{product['product_name']}**\n\n"
+                    f"Цена: {product['price']} ₽\n"
+                    f"Количество: {product['quantity']}\n"
+                    f"Описание: {product.get('description', 'Описание отсутствует')}"
+                )
+
+                await message.answer_photo(
+                    photo=product['photo'],
+                    caption=product_text,
+                    reply_markup=keyboard
+                ) 
+        else:
+            await message.answer('🛒 **Ваша корзина пуста!**', show_alert=True)
+        
+    else:
+        await message.answer('Мы не смогли найти данные о вас.\nПожалуйста, начните работу с ботом с команды /start', show_alert=True)
+
+@router.callback_query(F.data.startswith('cart_item_'))
+async def add_item_to_cart(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    product_id = int(callback.data[10:])
+    success = await rq.add_to_cart(user_id=user_id, product_id=product_id)
+    if  not success:
+        await callback.answer("Товар успешно добавлен в корзину", show_alert=True)
+    else:
+        await callback.answer("Не получилось добавить товар в корзину", show_alert=True)
+
+@router.callback_query(F.data.startswith('delete_from_cart:'))
+async def delete_item_from_cart(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    product_name = callback.data.split(":")[1]
+
+    product = await rq.get_product_by_name(product_name)
+
+    if product:
+        product_id = product.id
+        success = await rq.delete_from_cart(user_id=user_id, product_id=product_id)
+
+        if success:
+            await callback.answer("Товар успешно удалён из корзины.", show_alert=True)
+        else:
+            await callback.answer("Не удалось удалить товар из корзины.", show_alert=True)
+    else:
+        await callback.answer("Товар не найден.")
+
+@router.callback_query(F.data.startswith('drop_all:'))
+async def drop_all_cart(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    success = await rq.delete_all(user_id=user_id)
+
+    if success:
+        message = callback.message
+        await callback.answer('Корзина успешно очищена', show_alert=True)
+        empty_cart_text = '🛒 **Ваша корзина пуста!**'
+        await message.edit_text(empty_cart_text)
+        await message.edit_reply_markup()
+    else:
+        await callback.answer("Не удалось очистить корзину", show_alert=True)
+
+
+

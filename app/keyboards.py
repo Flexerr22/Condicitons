@@ -41,7 +41,7 @@ async def create_date_keyboard():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
     
     for i in range(14):
-        day = current_date + timedelta(days=i)
+        day = current_date + timedelta(days=i+1)
         button = InlineKeyboardButton(text=day.strftime("%d %B %Y"), callback_data=f"day_{day.strftime('%d %B %Y')}")
         keyboard.inline_keyboard.append([button])  
     
@@ -71,18 +71,20 @@ confirm_or_change = InlineKeyboardMarkup(
     ]
 )
 
-add_favourites = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text='Добавить в корзину', callback_data='add_favourites')]
-])
-
 async def show_items(message):
     all_items = await get_items()
     
     for item in all_items:
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text='В корзину', callback_data=f"cart_item_{item.id}")]
+            ]
+        )
+
         await message.answer_photo(photo=item.photo, caption=(
             f"Название: {item.name}\n"
             f"Описание: {item.description}\n"
             f"Цена: {item.price} ₽"
-        ),
-        reply_markup= add_favourites)
-    return 
+        ), reply_markup=keyboard)
+
+    return

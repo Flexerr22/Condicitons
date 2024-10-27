@@ -1,4 +1,4 @@
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 
 from sqlalchemy import Column, Integer, BigInteger, String, Time, Date
@@ -49,10 +49,13 @@ class Service_note(Base):
 
 class Cart(Base):
     __tablename__ = 'carts'
-    card_id = Column(Integer, primary_key=True)
-    product_id = Column(Integer)
-    user_id = Column(Integer)
-    quantity = Column(Integer)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(BigInteger, ForeignKey("users.tg_id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    quantity = Column(Integer, default=1)
+
+    user = relationship("User", backref="carts")
+    product = relationship("Product", backref="carts")
 
 
 async def async_main():
