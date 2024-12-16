@@ -82,9 +82,9 @@ async def show_items(message):
         )
 
         await message.answer_photo(photo=item.photo, caption=(
-            f"Название: {item.name}\n"
-            f"Описание: {item.description}\n"
-            f"Цена: {item.price} ₽"
+            f"\nНазвание: {item.name}\n"
+            f"\nОписание: {item.description}\n"
+            f"\nЦена: {item.price} ₽"
         ), reply_markup=keyboard)
 
     return

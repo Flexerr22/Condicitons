@@ -591,7 +591,7 @@ async def cart(message: Message):
             for product in cart_products:
                 delete_button = InlineKeyboardButton(
                     text="Удалить",
-                    callback_data=f"delete_from_cart:{product['product_name']}" 
+                    callback_data=f"delete_from_cart:{product['product_id']}" 
                 )
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[[delete_button]])
 
@@ -599,7 +599,6 @@ async def cart(message: Message):
                     f"**{product['product_name']}**\n\n"
                     f"Цена: {product['price']} ₽\n"
                     f"Количество: {product['quantity']}\n"
-                    f"Описание: {product.get('description', 'Описание отсутствует')}"
                 )
 
                 await message.answer_photo(
@@ -626,20 +625,16 @@ async def add_item_to_cart(callback: CallbackQuery):
 @router.callback_query(F.data.startswith('delete_from_cart:'))
 async def delete_item_from_cart(callback: CallbackQuery):
     user_id = callback.from_user.id
-    product_name = callback.data.split(":")[1]
+    product_id = int(callback.data.split(":")[1])  # Получаем product_id из callback data
 
-    product = await rq.get_product_by_name(product_name)
+    # Находим товар в корзине по user_id и product_id
+    success = await rq.delete_from_cart(user_id=user_id, product_id=product_id)
 
-    if product:
-        product_id = product.id
-        success = await rq.delete_from_cart(user_id=user_id, product_id=product_id)
-
-        if success:
-            await callback.answer("Товар успешно удалён из корзины.", show_alert=True)
-        else:
-            await callback.answer("Не удалось удалить товар из корзины.", show_alert=True)
+    if success:
+        await callback.answer("Товар успешно удалён из корзины.", show_alert=True)
     else:
-        await callback.answer("Товар не найден.")
+        await callback.answer("Не удалось удалить товар из корзины.", show_alert=True)
+
 
 @router.callback_query(F.data.startswith('drop_all:'))
 async def drop_all_cart(callback: CallbackQuery):
@@ -648,12 +643,12 @@ async def drop_all_cart(callback: CallbackQuery):
 
     if success:
         message = callback.message
-        await callback.answer('Корзина успешно очищена', show_alert=True)
+        await callback.answer('Не удалось очистить корзину', show_alert=True)
         empty_cart_text = '🛒 **Ваша корзина пуста!**'
         await message.edit_text(empty_cart_text)
         await message.edit_reply_markup()
     else:
-        await callback.answer("Не удалось очистить корзину", show_alert=True)
+        await callback.answer("Корзина успешно очищена", show_alert=True)
 
 
 

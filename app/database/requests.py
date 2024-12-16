@@ -56,11 +56,12 @@ async def get_cart(user_id):
         for item in cart_items:
             product = await session.scalar(select(Product).filter_by(id=item.product_id))
             cart_info.append({
+                'product_id': product.id,
                 'product_name': product.name,
                 'photo': product.photo,
                 'quantity': item.quantity,
                 'price': product.price,
-                'total_price': item.quantity * product.price
+                'total_price': item.quantity * product.price,
             })
         
         return cart_info
